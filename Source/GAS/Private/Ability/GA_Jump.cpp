@@ -1,7 +1,7 @@
 // Copyright Kyungbae Kim
 
 
-#include "GA_Jump.h"
+#include "Ability/GA_Jump.h"
 #include "GameFramework/Character.h"
 
 UGA_Jump::UGA_Jump()

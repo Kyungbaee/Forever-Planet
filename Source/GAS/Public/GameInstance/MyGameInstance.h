@@ -11,6 +11,6 @@ class GAS_API UMyGameInstance : public UGameInstance
 	GENERATED_BODY()
 	
 public:
-	virtual void OnStart() override;
+	virtual void Init() override;
 
 };
