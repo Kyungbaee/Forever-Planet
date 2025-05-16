@@ -14,6 +14,7 @@
 AGasPaperCharacter::AGasPaperCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
+    AbilitySystemComp = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
 }
 
 UPaperZDAnimInstance* AGasPaperCharacter::GetZDAnimInstance() const
@@ -34,6 +35,11 @@ void AGasPaperCharacter::BeginPlay()
             Subsystem->AddMappingContext(DefaultMappingContext, 0);
         }
     }
+
+    if (!OnTakeAnyDamage.IsAlreadyBound(this, &AGasPaperCharacter::HandleAnyDamage))
+    {
+        OnTakeAnyDamage.AddDynamic(this, &AGasPaperCharacter::HandleAnyDamage);
+    }
 }
 
 void AGasPaperCharacter::OnRep_PlayerState()
@@ -48,9 +54,14 @@ void AGasPaperCharacter::OnRep_PlayerState()
         {
             ASC->InitAbilityActorInfo(PS, this); // 클라이언트에서 ASC 초기화
         }
-
-        OnTakeAnyDamage.AddDynamic(this, &AGasPaperCharacter::HandleAnyDamage);
     }
+}
+
+float AGasPaperCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
+    AController* EventInstigator, AActor* DamageCauser)
+{
+    UE_LOG(LogTemp, Warning, TEXT("TakeDamage called with %.1f damage"), DamageAmount);
+    return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 }
 
 void AGasPaperCharacter::PossessedBy(AController* NewController)
@@ -72,6 +83,14 @@ void AGasPaperCharacter::PossessedBy(AController* NewController)
         }
 
         OnTakeAnyDamage.AddDynamic(this, &AGasPaperCharacter::HandleAnyDamage);
+    }
+    else
+    {
+        if (AbilitySystemComp)
+        {
+            AbilitySystemComp->InitAbilityActorInfo(this, this);
+            AbilitySystemComp->GiveAbility(FGameplayAbilitySpec(UGA_Knockback::StaticClass(), 1, 0));
+        }
     }
 }
 
@@ -112,6 +131,20 @@ void AGasPaperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
     }
 }
 
+UAbilitySystemComponent* AGasPaperCharacter::GetASC() const
+{
+    if (AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>())
+    {
+        return PS->GetAbilitySystemComponent();
+    }
+    return AbilitySystemComp;
+}
+
+UPaperFlipbookComponent* AGasPaperCharacter::GetFlipbookComponent() const
+{
+    return Cast<UPaperFlipbookComponent>(GetComponentByClass(UPaperFlipbookComponent::StaticClass()));
+}
+
 void AGasPaperCharacter::HandleAnyDamage(
     AActor* DamagedActor,
     float Damage,
@@ -119,18 +152,21 @@ void AGasPaperCharacter::HandleAnyDamage(
     AController* InstigatedBy,
     AActor* DamageCauser)
 {
-    AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>();
-    if (!PS) return;
+    if (HasAuthority()) // 서버 : GameplayEvent -> GAS
+    {
+        FGameplayEventData EventData;
+        EventData.EventTag = FGameplayTag::RequestGameplayTag(FName("Event.Knockback"));
+        EventData.Instigator = DamageCauser;
+        EventData.Target = this;
 
-    UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
-    if (!ASC) return;
+        if (UAbilitySystemComponent* ASC = GetASC())
+        {
+            ASC->HandleGameplayEvent(EventData.EventTag, &EventData);
+        }
 
-    FGameplayEventData EventData;
-    EventData.EventTag = FGameplayTag::RequestGameplayTag(FName("Event.Knockback"));
-    EventData.Instigator = DamageCauser;
-    EventData.Target = this;
-
-    ASC->HandleGameplayEvent(EventData.EventTag, &EventData);
+        // 클라 : 색 변경
+        Multicast_SetHitColor();
+    }
 }
 
 void AGasPaperCharacter::NotifyAttackEnded()
@@ -150,5 +186,14 @@ void AGasPaperCharacter::NotifyAttackEnded()
                 break;
             }
         }
+    }
+}
+
+void AGasPaperCharacter::Multicast_SetHitColor_Implementation()
+{
+    if (UPaperFlipbookComponent* FlipbookComponent = GetFlipbookComponent())
+    {
+        FLinearColor HitColor(0.3f, 0.3f, 0.3f, 1.0f);
+        FlipbookComponent->SetSpriteColor(HitColor);
     }
 }

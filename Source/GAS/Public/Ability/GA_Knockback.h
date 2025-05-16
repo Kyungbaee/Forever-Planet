@@ -21,8 +21,8 @@ public:
         const FGameplayEventData* TriggerEventData) override;
 
 protected:
-    float KnockbackStrength = 500.f;
-    float KnockbackDuration = 0.8f;
+    float KnockbackStrength = 50.f;
+    float KnockbackDuration = 0.2f;
     float ElapsedTime;
 
     FTimerHandle KnockbackTimerHandle;

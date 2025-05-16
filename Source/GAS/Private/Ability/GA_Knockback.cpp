@@ -3,6 +3,7 @@
 
 #include "Ability/GA_Knockback.h"
 #include "Character/GasPaperCharacter.h"
+#include "PaperFlipbookComponent.h"
 #include "GameInstance/CharacterAnimInstance.h"
 
 UGA_Knockback::UGA_Knockback()
@@ -26,8 +27,6 @@ void UGA_Knockback::ActivateAbility(
     const FGameplayAbilityActivationInfo ActivationInfo,
     const FGameplayEventData* TriggerEventData)
 {
-    UE_LOG(LogTemp, Warning, TEXT("Enter ActivateAbility"));
-
     if (!ActorInfo || !ActorInfo->AvatarActor.IsValid()) return;
 
     AActor* Avatar = ActorInfo->AvatarActor.Get();
@@ -45,7 +44,6 @@ void UGA_Knockback::ActivateAbility(
         if (UCharacterAnimInstance* AnimInstance = Cast<UCharacterAnimInstance>(MyChar->GetZDAnimInstance()))
         {
             AnimInstance->SetIsKnockback(true);
-            UE_LOG(LogTemp, Warning, TEXT("SetIsKnockback"));
         }
     }
 
@@ -82,4 +80,10 @@ void UGA_Knockback::EndKnockback()
     GetWorld()->GetTimerManager().ClearTimer(KnockbackTimerHandle);
 
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+
+    AGasPaperCharacter* MyChar = Cast<AGasPaperCharacter>(GetAvatarActorFromActorInfo());
+    if (MyChar && MyChar->GetSprite())
+    {
+        MyChar->GetSprite()->SetSpriteColor(FLinearColor::White);
+    }
 }
