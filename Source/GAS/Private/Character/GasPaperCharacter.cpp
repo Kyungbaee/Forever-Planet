@@ -2,19 +2,19 @@
 
 
 #include "Character/GasPaperCharacter.h"
-#include "AbilitySystemComponent.h"
-#include "Player/GasCharacterPlayerState.h"
-#include "Ability/GA_Jump.h"
-#include "Ability/GA_Attack.h"
-#include "Ability/GA_Knockback.h"
-#include "PaperZDAnimInstance.h"
-#include "PaperZDCharacter.h"
 #include "GameInstance/CharacterAnimInstance.h"
 
 AGasPaperCharacter::AGasPaperCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
+    bReplicates = true;
+    SetReplicatingMovement(true);
+
     AbilitySystemComp = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
+    MyAttributeSet = CreateDefaultSubobject<UMyAttributeSet>(TEXT("MyAttributeSet"));
+    AbilitySystemComp->AddAttributeSetSubobject(MyAttributeSet);
+    AbilitySystemComp->SetIsReplicated(true);
+    AbilitySystemComp->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 }
 
 UPaperZDAnimInstance* AGasPaperCharacter::GetZDAnimInstance() const
@@ -24,114 +24,60 @@ UPaperZDAnimInstance* AGasPaperCharacter::GetZDAnimInstance() const
 
 void AGasPaperCharacter::BeginPlay()
 {
-	Super::BeginPlay();
-
-    // Enhanced Input 세팅
-    if (APlayerController* PC = Cast<APlayerController>(Controller))
-    {
-        if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
-            ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-        {
-            Subsystem->AddMappingContext(DefaultMappingContext, 0);
-        }
-    }
-
-    if (!OnTakeAnyDamage.IsAlreadyBound(this, &AGasPaperCharacter::HandleAnyDamage))
-    {
-        OnTakeAnyDamage.AddDynamic(this, &AGasPaperCharacter::HandleAnyDamage);
-    }
-}
-
-void AGasPaperCharacter::OnRep_PlayerState()
-{
-    Super::OnRep_PlayerState();
-
-    AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>();
-    if (PS)
-    {
-        UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
-        if (ASC)
-        {
-            ASC->InitAbilityActorInfo(PS, this); // 클라이언트에서 ASC 초기화
-        }
-    }
+    Super::BeginPlay();
 }
 
 float AGasPaperCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent,
     AController* EventInstigator, AActor* DamageCauser)
 {
-    UE_LOG(LogTemp, Warning, TEXT("TakeDamage called with %.1f damage"), DamageAmount);
+    FGameplayEventData EventData;
+    EventData.EventTag = FGameplayTag::RequestGameplayTag("Event.Damage");
+    EventData.EventMagnitude = DamageAmount;
+    EventData.Target = this;
+    EventData.Instigator = DamageCauser;
+
+    if (UAbilitySystemComponent* ASC = GetMyAbilitySystemComponent())
+    {
+        ASC->HandleGameplayEvent(EventData.EventTag, &EventData);
+    }
+
     return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 }
 
-void AGasPaperCharacter::PossessedBy(AController* NewController)
+void AGasPaperCharacter::HandleZeroHealth()
 {
-    Super::PossessedBy(NewController);
-
-    AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>();
-    if (PS)
+    if (UAbilitySystemComponent* ASC = GetMyAbilitySystemComponent())
     {
-        UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
-        if (ASC)
+        if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag("Type.Player")))
         {
-            ASC->InitAbilityActorInfo(PS, this);
-
-            // 서버에서 Ability 부여
-            ASC->GiveAbility(FGameplayAbilitySpec(UGA_Jump::StaticClass(), 1, 0));
-            ASC->GiveAbility(FGameplayAbilitySpec(UGA_Attack::StaticClass(), 1, 0));
-            ASC->GiveAbility(FGameplayAbilitySpec(UGA_Knockback::StaticClass(), 1, 0));
+            ASC->TryActivateAbilityByClass(UGA_Die::StaticClass());
         }
-
-        OnTakeAnyDamage.AddDynamic(this, &AGasPaperCharacter::HandleAnyDamage);
-    }
-    else
-    {
-        if (AbilitySystemComp)
+        else if (ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag("Type.Enemy")))
         {
-            AbilitySystemComp->InitAbilityActorInfo(this, this);
-            AbilitySystemComp->GiveAbility(FGameplayAbilitySpec(UGA_Knockback::StaticClass(), 1, 0));
+            ASC->TryActivateAbilityByClass(UGA_Destroy::StaticClass());
         }
     }
 }
 
-void AGasPaperCharacter::JumpByGAS()
+void AGasPaperCharacter::InitAttributes()
 {
-    AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>();
+    UAbilitySystemComponent* ASC = GetMyAbilitySystemComponent();
 
-    if (PS)
+    if (!ASC) return;
+
+    FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+    Context.AddSourceObject(this);
+
+    FGameplayEffectSpecHandle NewHandle = ASC->MakeOutgoingSpec(
+        UGE_InitAttributes::StaticClass(), 1.0f, Context);
+
+    if (NewHandle.IsValid())
     {
-        UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
-        if (ASC)
-        {
-            ASC->TryActivateAbilityByClass(UGA_Jump::StaticClass());
-        }
+        ASC->ApplyGameplayEffectSpecToSelf(*NewHandle.Data.Get());
     }
 }
 
-void AGasPaperCharacter::AttackByGAS()
-{
-    AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>();
-
-    if (PS)
-    {
-        UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
-        if (ASC)
-        {
-             ASC->TryActivateAbilityByClass(UGA_Attack::StaticClass());
-        }
-    }
-}
-
-void AGasPaperCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
-{
-    if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
-    {
-        EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &AGasPaperCharacter::JumpByGAS);
-        EnhancedInput->BindAction(AttackAction, ETriggerEvent::Started, this, &AGasPaperCharacter::AttackByGAS);
-    }
-}
-
-UAbilitySystemComponent* AGasPaperCharacter::GetASC() const
+UAbilitySystemComponent* AGasPaperCharacter::GetMyAbilitySystemComponent() const
 {
     if (AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>())
     {
@@ -145,36 +91,21 @@ UPaperFlipbookComponent* AGasPaperCharacter::GetFlipbookComponent() const
     return Cast<UPaperFlipbookComponent>(GetComponentByClass(UPaperFlipbookComponent::StaticClass()));
 }
 
-void AGasPaperCharacter::HandleAnyDamage(
-    AActor* DamagedActor,
-    float Damage,
-    const UDamageType* DamageType,
-    AController* InstigatedBy,
-    AActor* DamageCauser)
+void AGasPaperCharacter::TryAttack()
 {
-    if (HasAuthority()) // 서버 : GameplayEvent -> GAS
+    if (UAbilitySystemComponent* ASC = GetMyAbilitySystemComponent())
     {
-        FGameplayEventData EventData;
-        EventData.EventTag = FGameplayTag::RequestGameplayTag(FName("Event.Knockback"));
-        EventData.Instigator = DamageCauser;
-        EventData.Target = this;
-
-        if (UAbilitySystemComponent* ASC = GetASC())
+        if (!ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag("Cooldown.Attack")))
         {
-            ASC->HandleGameplayEvent(EventData.EventTag, &EventData);
+            ASC->TryActivateAbilityByClass(UGA_Attack::StaticClass());
         }
-
-        // 클라 : 색 변경
-        Multicast_SetHitColor();
     }
 }
 
 void AGasPaperCharacter::NotifyAttackEnded()
 {
-    AGasCharacterPlayerState* PS = GetPlayerState<AGasCharacterPlayerState>();
-    if (!PS) return;
-
-    if (UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent())
+    UAbilitySystemComponent* ASC = GetMyAbilitySystemComponent();
+    if (ASC)
     {
         TArray<FGameplayAbilitySpec> Specs = ASC->GetActivatableAbilities();
         for (FGameplayAbilitySpec& Spec : Specs)
@@ -189,6 +120,25 @@ void AGasPaperCharacter::NotifyAttackEnded()
     }
 }
 
+void AGasPaperCharacter::SetIsAttacking(bool bNewState)
+{
+    if (bIsAttacking == bNewState)
+        return;
+
+    bIsAttacking = bNewState;
+
+    // 직접 호출 시 AnimInstance도 갱신
+    OnRep_IsAttacking();
+}
+
+void AGasPaperCharacter::OnRep_IsAttacking()
+{
+    if (UCharacterAnimInstance* Anim = Cast<UCharacterAnimInstance>(GetZDAnimInstance()))
+    {
+        Anim->SetIsAttacking(bIsAttacking);
+    }
+}
+
 void AGasPaperCharacter::Multicast_SetHitColor_Implementation()
 {
     if (UPaperFlipbookComponent* FlipbookComponent = GetFlipbookComponent())
@@ -196,4 +146,28 @@ void AGasPaperCharacter::Multicast_SetHitColor_Implementation()
         FLinearColor HitColor(0.3f, 0.3f, 0.3f, 1.0f);
         FlipbookComponent->SetSpriteColor(HitColor);
     }
+}
+
+void AGasPaperCharacter::Multicast_ResetHitColor_Implementation()
+{
+    if (GetSprite())
+    {
+        GetSprite()->SetSpriteColor(FLinearColor::White);
+    }
+}
+
+void AGasPaperCharacter::Multicast_SetKnockback_Implementation(bool bState)
+{
+    if (UCharacterAnimInstance* KnockbackAnim = Cast<UCharacterAnimInstance>(GetZDAnimInstance()))
+    {
+        KnockbackAnim->SetIsKnockback(bState);
+    }
+}
+
+void AGasPaperCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    // 복제할 변수 등록
+    DOREPLIFETIME(AGasPaperCharacter, bIsAttacking);
 }

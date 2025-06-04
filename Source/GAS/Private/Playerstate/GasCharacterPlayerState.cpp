@@ -1,7 +1,7 @@
 // Copyright Kyungbae Kim
 
 
-#include "Player/GasCharacterPlayerState.h"
+#include "Playerstate/GasCharacterPlayerState.h"
 
 AGasCharacterPlayerState::AGasCharacterPlayerState()
 {

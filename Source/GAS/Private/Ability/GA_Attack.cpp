@@ -1,13 +1,17 @@
 // Copyright Kyungbae Kim
 
 #include "Ability/GA_Attack.h"
+#include "Effect/GE_Cooldown.h"
 #include "Character/GasPaperCharacter.h"
 #include "GameInstance/CharacterAnimInstance.h"
 
 UGA_Attack::UGA_Attack()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+
+	CooldownGameplayEffectClass = UGE_Cooldown::StaticClass();
+	ActivationBlockedTags.AddTag(FGameplayTag::RequestGameplayTag("Cooldown.Attack"));
 }
 
 void UGA_Attack::ActivateAbility(
@@ -24,10 +28,7 @@ void UGA_Attack::ActivateAbility(
 
 	if (AGasPaperCharacter* MyChar = Cast<AGasPaperCharacter>(ActorInfo->AvatarActor))
 	{
-		if (UCharacterAnimInstance* AnimInstance = Cast<UCharacterAnimInstance>(MyChar->GetZDAnimInstance()))
-		{
-			AnimInstance->SetIsAttacking(true);
-		}
+		MyChar->SetIsAttacking(true);
 	}
 }
 
@@ -39,6 +40,11 @@ void UGA_Attack::EndAbility(
 	bool bWasCancelled)
 {
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+
+	if (AGasPaperCharacter* MyChar = Cast<AGasPaperCharacter>(ActorInfo->AvatarActor))
+	{
+		MyChar->SetIsAttacking(false);
+	}
 }
 
 void UGA_Attack::OnAttackEnded()

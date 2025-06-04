@@ -8,11 +8,12 @@
 
 UGA_Knockback::UGA_Knockback()
 {
-	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+    InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+    NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 
     // 트리거 방식 설정: 이벤트 태그 "Event.Knockback"이 들어오면 자동 발동
     FAbilityTriggerData TriggerData;
-    TriggerData.TriggerTag = FGameplayTag::RequestGameplayTag(FName("Event.Knockback"));
+    TriggerData.TriggerTag = FGameplayTag::RequestGameplayTag(FName("Event.Damage"));
     TriggerData.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
     AbilityTriggers.Add(TriggerData);
 
@@ -27,7 +28,7 @@ void UGA_Knockback::ActivateAbility(
     const FGameplayAbilityActivationInfo ActivationInfo,
     const FGameplayEventData* TriggerEventData)
 {
-    if (!ActorInfo || !ActorInfo->AvatarActor.IsValid()) return;
+    if (!ActorInfo || !ActorInfo->AvatarActor.IsValid() || !HasAuthority(&ActivationInfo)) return;
 
     AActor* Avatar = ActorInfo->AvatarActor.Get();
     const AActor* CauserConst = Cast<AActor>(TriggerEventData->Instigator.Get());
@@ -39,12 +40,9 @@ void UGA_Knockback::ActivateAbility(
         return;
     }
 
-    if (AGasPaperCharacter* MyChar = Cast<AGasPaperCharacter>(ActorInfo->AvatarActor))
+    if (AGasPaperCharacter* MyChar = Cast<AGasPaperCharacter>(GetAvatarActorFromActorInfo()))
     {
-        if (UCharacterAnimInstance* AnimInstance = Cast<UCharacterAnimInstance>(MyChar->GetZDAnimInstance()))
-        {
-            AnimInstance->SetIsKnockback(true);
-        }
+        MyChar->Multicast_SetKnockback(true);
     }
 
     StartLocation = Avatar->GetActorLocation();
@@ -81,9 +79,9 @@ void UGA_Knockback::EndKnockback()
 
     EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 
-    AGasPaperCharacter* MyChar = Cast<AGasPaperCharacter>(GetAvatarActorFromActorInfo());
-    if (MyChar && MyChar->GetSprite())
+    if (AGasPaperCharacter* MyChar = Cast<AGasPaperCharacter>(GetAvatarActorFromActorInfo()))
     {
-        MyChar->GetSprite()->SetSpriteColor(FLinearColor::White);
+        MyChar->Multicast_ResetHitColor();
+        MyChar->Multicast_SetKnockback(false);
     }
 }

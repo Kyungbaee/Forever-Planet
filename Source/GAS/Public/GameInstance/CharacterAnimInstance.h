@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "PaperZDAnimInstance.h"
 #include "PaperZDAnimNotify.h"
+#include "Character/GasPaperCharacter.h"
+#include "Animation/AnimInstance.h"
 #include "CharacterAnimInstance.generated.h"
 
 UCLASS()
@@ -19,9 +21,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Knockback")
     bool IsKnockback = false;
 
-    UFUNCTION(BlueprintCallable)
     void SetIsAttacking(bool bValue) { IsAttacking = bValue; }
-
-    UFUNCTION(BlueprintCallable)
     void SetIsKnockback(bool bValue) { IsKnockback = bValue; }
+    void OnTick_Implementation(float DeltaTime);
 };

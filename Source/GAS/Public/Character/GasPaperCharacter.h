@@ -4,11 +4,27 @@
 
 #include "CoreMinimal.h"
 #include "PaperZDCharacter.h"
+#include "PaperZDAnimInstance.h"
 #include "PaperFlipbookComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubSystems.h"
 #include "AbilitySystemComponent.h"
+#include "Playerstate/GasCharacterPlayerState.h"
+#include "Effect/GE_InitAttributes.h"
+#include "Attribute/MyAttributeSet.h"
+#include "Ability/GA_Jump.h"
+#include "Ability/GA_Attack.h"
+#include "Ability/GA_Knockback.h"
+#include "Ability/GA_ReceiveDamage.h"
+#include "Ability/GA_Die.h"
+#include "Ability/GA_Destroy.h"
+#include "Net/UnrealNetwork.h"
+#include "MyHUD.h"
 #include "GasPaperCharacter.generated.h"
+
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnHealthChanged, float, NewHealth, float, OldHealth);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMaxHealthChanged, float, NewMaxHealth, float, OldMaxHealth);
 
 UCLASS(Abstract)
 class GAS_API AGasPaperCharacter : public APaperZDCharacter
@@ -18,37 +34,51 @@ class GAS_API AGasPaperCharacter : public APaperZDCharacter
 public:
 	AGasPaperCharacter();
 	UPaperZDAnimInstance* GetZDAnimInstance() const;
-
-protected:
-	virtual void BeginPlay() override;
-	virtual void OnRep_PlayerState() override;
-	virtual void PossessedBy(AController* NewController) override;
-	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
-
-	void JumpByGAS();
-	void AttackByGAS();
-	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
-	UAbilitySystemComponent* GetASC() const;
 	UPaperFlipbookComponent* GetFlipbookComponent() const;
 
-	UFUNCTION()
-	void HandleAnyDamage(AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser);
-
-	UFUNCTION(BlueprintCallable)
-	void NotifyAttackEnded();
+	virtual void BeginPlay() override;
+	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+	void HandleZeroHealth();
+	void InitAttributes();
+	void TryAttack();
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_SetHitColor();
 
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	class UInputMappingContext* DefaultMappingContext;
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ResetHitColor();
 
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	class UInputAction* JumpAction;
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_SetKnockback(bool bState);
 
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	class UInputAction* AttackAction;
+	UFUNCTION(BlueprintCallable)
+	void NotifyAttackEnded();
+
+	UPROPERTY(ReplicatedUsing = OnRep_IsAttacking)
+	bool bIsAttacking;
+
+	bool IsAttacking() const { return bIsAttacking; }
+	void SetIsAttacking(bool bNewState);
+
+
+	UFUNCTION()
+	void OnRep_IsAttacking();
+
+	UFUNCTION(BlueprintCallable, Category = "GAS")
+	UAbilitySystemComponent* GetMyAbilitySystemComponent() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS")
 	UAbilitySystemComponent* AbilitySystemComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS")
+	UMyAttributeSet* MyAttributeSet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPaperFlipbookComponent* CharacterSprite;
+
+	UPROPERTY(BlueprintAssignable, Category = "UI")
+	FOnHealthChanged OnHealthChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "UI")
+	FOnMaxHealthChanged OnMaxHealthChanged;
 };
